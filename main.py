@@ -12,7 +12,6 @@ import re
 
 app = Flask(__name__)
 
-# CORS configuration
 ALLOWED_ORIGIN = os.environ.get('FRONTEND_URL', 'https://nowiba1.github.io')
 CORS(app, origins=[ALLOWED_ORIGIN], supports_credentials=False)
 
@@ -40,23 +39,21 @@ def keep_alive():
         if should_be_awake():
             try:
                 requests.get(f"{app_url}/health", timeout=5)
-                print(f"✓ Keep-alive ping at {datetime.now()}")
             except:
                 pass
             time.sleep(840)
         else:
-            print(f"💤 Sleep hours (00:00-07:00 UTC)")
             time.sleep(3600)
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
 @app.route('/')
 def index():
-    return jsonify({"status": "active", "frontend": "https://nowiba1.github.io/youtube/"})
+    return jsonify({"status": "active"})
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "awake", "time": str(datetime.now())})
+    return jsonify({"status": "awake"})
 
 @app.route('/api/formats', methods=['POST'])
 def get_formats():
@@ -67,14 +64,12 @@ def get_formats():
         if not url:
             return jsonify({"error": "URL is required"}), 400
         
-        print(f"Fetching formats for: {url}")
-        
+        # Use free proxy to bypass YouTube IP block
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-            # Use mweb client - NO PO TOKEN REQUIRED
-            'extractor_args': {'youtube': {'player_client': ['mweb']}},
+            'proxy': 'http://144.76.183.179:3128',  # Free working proxy
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -87,7 +82,6 @@ def get_formats():
                         'format_id': f['format_id'],
                         'quality': f"{f['height']}p",
                         'ext': f['ext'],
-                        'filesize': f.get('filesize', 0)
                     })
             
             seen = set()
@@ -97,8 +91,6 @@ def get_formats():
                     seen.add(fmt['quality'])
                     unique_formats.append(fmt)
             
-            print(f"Found {len(unique_formats)} formats")
-            
             return jsonify({
                 "title": info.get('title', 'Unknown'),
                 "thumbnail": info.get('thumbnail', ''),
@@ -106,14 +98,11 @@ def get_formats():
             })
             
     except Exception as e:
-        print(f"ERROR in get_formats: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/download', methods=['POST'])
 def download_video():
-    temp_file = None
     temp_path = None
-    
     try:
         data = request.json
         url = data.get('url')
@@ -122,8 +111,6 @@ def download_video():
         
         if not url:
             return jsonify({"error": "URL is required"}), 400
-        
-        print(f"Downloading: {url} as {download_type} ({quality})")
         
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{download_type}')
         temp_path = temp_file.name
@@ -139,8 +126,7 @@ def download_video():
                 }],
                 'outtmpl': temp_path.replace('.audio', ''),
                 'quiet': True,
-                'no_warnings': True,
-                'extractor_args': {'youtube': {'player_client': ['mweb']}},
+                'proxy': 'http://144.76.183.179:3128',
             }
         else:
             height = quality.replace('p', '')
@@ -148,9 +134,8 @@ def download_video():
                 'format': f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]',
                 'outtmpl': temp_path,
                 'quiet': True,
-                'no_warnings': True,
                 'merge_output_format': 'mp4',
-                'extractor_args': {'youtube': {'player_client': ['mweb']}},
+                'proxy': 'http://144.76.183.179:3128',
             }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -166,8 +151,6 @@ def download_video():
             safe_title = re.sub(r'[^\w\-_\. ]', '', info.get('title', 'video'))[:100]
             download_name = f"{safe_title}.{download_type == 'video' and 'mp4' or 'mp3'}"
             
-            print(f"Download complete: {download_name}")
-            
             return send_file(
                 filename,
                 as_attachment=True,
@@ -176,7 +159,6 @@ def download_video():
             )
             
     except Exception as e:
-        print(f"ERROR in download_video: {str(e)}")
         return jsonify({"error": str(e)}), 500
         
     finally:
