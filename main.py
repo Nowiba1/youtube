@@ -12,9 +12,22 @@ import re
 
 app = Flask(__name__)
 
-# CORS configuration - Will be set via environment variable
+# CORS configuration - Fixed for nowiba1.github.io
 ALLOWED_ORIGIN = os.environ.get('FRONTEND_URL', 'https://nowiba1.github.io')
-CORS(app, origins=[ALLOWED_ORIGIN])
+CORS(app, origins=[ALLOWED_ORIGIN], supports_credentials=False)
+
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', 'https://nowiba1.github.io')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    return response
+
+@app.route('/health', methods=['OPTIONS'])
+@app.route('/api/formats', methods=['OPTIONS'])
+@app.route('/api/download', methods=['OPTIONS'])
+def handle_options():
+    return '', 200
 
 # Keep-alive configuration
 def should_be_awake():
@@ -25,13 +38,13 @@ def should_be_awake():
 
 def keep_alive():
     """Background thread to prevent Render sleep"""
-    app_url = os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:10000')
+    app_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://youtube-4y2j.onrender.com')
     
     while True:
         if should_be_awake():
             try:
-                requests.get(f"{app_url}/health", timeout=5)
-                print(f"✓ Keep-alive ping at {datetime.now()}")
+                response = requests.get(f"{app_url}/health", timeout=5)
+                print(f"✓ Keep-alive ping at {datetime.now()} - Status: {response.status_code}")
             except Exception as e:
                 print(f"✗ Ping failed: {e}")
             time.sleep(840)  # 14 minutes
@@ -42,12 +55,27 @@ def keep_alive():
 # Start keep-alive thread
 threading.Thread(target=keep_alive, daemon=True).start()
 
+@app.route('/')
+def index():
+    return jsonify({
+        "message": "YouTube Downloader API is running!",
+        "endpoints": {
+            "/health": "Check server status",
+            "/api/formats": "POST - Get video formats",
+            "/api/download": "POST - Download video/audio"
+        },
+        "frontend": "https://nowiba1.github.io/youtube/",
+        "status": "active",
+        "sleep_hours": "00:00-07:00 UTC"
+    })
+
 @app.route('/health')
 def health():
     return jsonify({
         "status": "awake",
         "time": str(datetime.now()),
-        "sleep_hours": "00:00-07:00 UTC"
+        "sleep_hours": "00:00-07:00 UTC",
+        "cors_allowed": "https://nowiba1.github.io"
     })
 
 @app.route('/api/formats', methods=['POST'])
@@ -78,25 +106,39 @@ def get_formats():
                         'filesize': f.get('filesize', 0)
                     })
             
+            # Remove duplicates by quality
+            seen = set()
+            unique_formats = []
+            for fmt in formats:
+                if fmt['quality'] not in seen:
+                    seen.add(fmt['quality'])
+                    unique_formats.append(fmt)
+            
             return jsonify({
                 "title": info.get('title', 'Unknown'),
                 "thumbnail": info.get('thumbnail', ''),
-                "video_formats": formats
+                "video_formats": unique_formats
             })
             
     except Exception as e:
+        print(f"Error in get_formats: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/download', methods=['POST'])
 def download_video():
     temp_file = None
+    temp_path = None
+    
     try:
         data = request.json
         url = data.get('url')
         download_type = data.get('type', 'video')
         quality = data.get('quality', '720p')
         
-        # Create temp file
+        if not url:
+            return jsonify({"error": "URL is required"}), 400
+        
+        # Create temp file with unique name
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{download_type}')
         temp_path = temp_file.name
         temp_file.close()
@@ -111,6 +153,7 @@ def download_video():
                 }],
                 'outtmpl': temp_path.replace('.audio', ''),
                 'quiet': True,
+                'no_warnings': True,
             }
         else:
             height = quality.replace('p', '')
@@ -118,6 +161,7 @@ def download_video():
                 'format': f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]',
                 'outtmpl': temp_path,
                 'quiet': True,
+                'no_warnings': True,
                 'merge_output_format': 'mp4'
             }
         
@@ -126,11 +170,18 @@ def download_video():
             filename = ydl.prepare_filename(info)
             
             if download_type == 'audio':
-                filename = filename.replace('.webm', '.mp3').replace('.m4a', '.mp3')
+                # Handle audio filename
+                if filename.endswith(('.webm', '.m4a')):
+                    filename = filename.rsplit('.', 1)[0] + '.mp3'
+                elif not filename.endswith('.mp3'):
+                    filename = filename + '.mp3'
             
             # Clean filename for security
-            safe_filename = re.sub(r'[^\w\-_\. ]', '', info.get('title', 'video'))
-            download_name = f"{safe_filename}.{download_type == 'video' and 'mp4' or 'mp3'}"
+            safe_title = re.sub(r'[^\w\-_\. ]', '', info.get('title', 'video'))
+            safe_title = safe_title[:100]  # Limit length
+            download_name = f"{safe_title}.{download_type == 'video' and 'mp4' or 'mp3'}"
+            
+            print(f"Download complete: {download_name}")
             
             return send_file(
                 filename,
@@ -140,14 +191,23 @@ def download_video():
             )
             
     except Exception as e:
+        print(f"Error in download_video: {str(e)}")
         return jsonify({"error": str(e)}), 500
+        
     finally:
         # Cleanup temp file after sending
-        if temp_file and os.path.exists(temp_path):
+        if temp_path and os.path.exists(temp_path):
             try:
                 os.unlink(temp_path)
-            except:
-                pass
+            except Exception as e:
+                print(f"Error cleaning up temp file: {e}")
+        
+        # Also try to cleanup the actual downloaded file
+        try:
+            if 'filename' in locals() and os.path.exists(filename):
+                os.unlink(filename)
+        except:
+            pass
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
