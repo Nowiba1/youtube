@@ -29,6 +29,24 @@ def after_request(response):
 def handle_options():
     return '', 200
 
+# YouTube cookies to bypass bot detection
+YOUTUBE_COOKIES = {
+    'CONSENT': 'YES+cb',
+    'SOCS': 'CAESHAgCEhJnd3NfMjAyNTA0LTA3X3IwGgJlbiACGgYIgOD2sgY',
+    'VISITOR_INFO1_LIVE': 'kXYQaTc7nDY',
+    'VISITOR_PRIVACY_METADATA': 'CgJFRRIEGgAgXw%3D%3D',
+    'PREF': 'tz=Europe.London&f4=4000000',
+}
+
+# Common HTTP headers to mimic a real browser
+HTTP_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Origin': 'https://www.youtube.com',
+    'Referer': 'https://www.youtube.com/',
+    'Cookie': '; '.join([f'{k}={v}' for k, v in YOUTUBE_COOKIES.items()])
+}
+
 # Keep-alive configuration
 def should_be_awake():
     """Return False between 00:00-07:00 UTC"""
@@ -87,10 +105,13 @@ def get_formats():
         if not url:
             return jsonify({"error": "URL is required"}), 400
         
+        print(f"Fetching formats for: {url}")
+        
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
-            'extract_flat': False
+            'extract_flat': False,
+            'http_headers': HTTP_HEADERS
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -114,6 +135,8 @@ def get_formats():
                     seen.add(fmt['quality'])
                     unique_formats.append(fmt)
             
+            print(f"Found {len(unique_formats)} formats")
+            
             return jsonify({
                 "title": info.get('title', 'Unknown'),
                 "thumbnail": info.get('thumbnail', ''),
@@ -121,7 +144,7 @@ def get_formats():
             })
             
     except Exception as e:
-        print(f"Error in get_formats: {str(e)}")
+        print(f"ERROR in get_formats: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/download', methods=['POST'])
@@ -137,6 +160,8 @@ def download_video():
         
         if not url:
             return jsonify({"error": "URL is required"}), 400
+        
+        print(f"Downloading: {url} as {download_type} ({quality})")
         
         # Create temp file with unique name
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{download_type}')
@@ -154,6 +179,7 @@ def download_video():
                 'outtmpl': temp_path.replace('.audio', ''),
                 'quiet': True,
                 'no_warnings': True,
+                'http_headers': HTTP_HEADERS
             }
         else:
             height = quality.replace('p', '')
@@ -162,7 +188,8 @@ def download_video():
                 'outtmpl': temp_path,
                 'quiet': True,
                 'no_warnings': True,
-                'merge_output_format': 'mp4'
+                'merge_output_format': 'mp4',
+                'http_headers': HTTP_HEADERS
             }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -191,7 +218,7 @@ def download_video():
             )
             
     except Exception as e:
-        print(f"Error in download_video: {str(e)}")
+        print(f"ERROR in download_video: {str(e)}")
         return jsonify({"error": str(e)}), 500
         
     finally:
