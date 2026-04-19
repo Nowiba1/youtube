@@ -58,6 +58,25 @@ def index():
 def health():
     return jsonify({"status": "awake", "time": str(datetime.now())})
 
+def get_yt_dlp_opts():
+    """Return yt-dlp options that bypass bot detection"""
+    return {
+        'quiet': True,
+        'no_warnings': True,
+        'extract_flat': False,
+        # Use iOS client - weakest bot detection
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['ios'],
+                'skip': ['webpage']
+            }
+        },
+        # iOS user agent
+        'user_agent': 'com.google.ios.youtube/19.49.7 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X)',
+        # No cookies needed
+        'cookiefile': None,
+    }
+
 @app.route('/api/formats', methods=['POST'])
 def get_formats():
     try:
@@ -67,12 +86,9 @@ def get_formats():
         if not url:
             return jsonify({"error": "URL is required"}), 400
         
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'extractor_args': {'youtube': {'player_client': ['android']}},
-        }
+        print(f"Fetching formats for: {url}")
+        
+        ydl_opts = get_yt_dlp_opts()
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -94,6 +110,8 @@ def get_formats():
                     seen.add(fmt['quality'])
                     unique_formats.append(fmt)
             
+            print(f"Found {len(unique_formats)} formats")
+            
             return jsonify({
                 "title": info.get('title', 'Unknown'),
                 "thumbnail": info.get('thumbnail', ''),
@@ -101,7 +119,7 @@ def get_formats():
             })
             
     except Exception as e:
-        print(f"ERROR: {str(e)}")
+        print(f"ERROR in get_formats: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/download', methods=['POST'])
@@ -118,46 +136,41 @@ def download_video():
         if not url:
             return jsonify({"error": "URL is required"}), 400
         
+        print(f"Downloading: {url} as {download_type} ({quality})")
+        
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{download_type}')
         temp_path = temp_file.name
         temp_file.close()
         
+        ydl_opts = get_yt_dlp_opts()
+        ydl_opts['outtmpl'] = temp_path.replace('.audio', '') if download_type == 'audio' else temp_path
+        
         if download_type == 'audio':
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': quality.replace('kbps', ''),
-                }],
-                'outtmpl': temp_path.replace('.audio', ''),
-                'quiet': True,
-                'no_warnings': True,
-                'extractor_args': {'youtube': {'player_client': ['android']}},
-            }
+            ydl_opts['format'] = 'bestaudio/best'
+            ydl_opts['postprocessors'] = [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': quality.replace('kbps', ''),
+            }]
         else:
             height = quality.replace('p', '')
-            ydl_opts = {
-                'format': f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]',
-                'outtmpl': temp_path,
-                'quiet': True,
-                'no_warnings': True,
-                'merge_output_format': 'mp4',
-                'extractor_args': {'youtube': {'player_client': ['android']}},
-            }
+            ydl_opts['format'] = f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]'
+            ydl_opts['merge_output_format'] = 'mp4'
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
             if download_type == 'audio':
-                if filename.endswith(('.webm', '.m4a')):
+                if filename.endswith(('.webm', '.m4a', '.opus')):
                     filename = filename.rsplit('.', 1)[0] + '.mp3'
                 elif not filename.endswith('.mp3'):
                     filename = filename + '.mp3'
             
             safe_title = re.sub(r'[^\w\-_\. ]', '', info.get('title', 'video'))[:100]
             download_name = f"{safe_title}.{download_type == 'video' and 'mp4' or 'mp3'}"
+            
+            print(f"Download complete: {download_name}")
             
             return send_file(
                 filename,
@@ -167,7 +180,7 @@ def download_video():
             )
             
     except Exception as e:
-        print(f"ERROR: {str(e)}")
+        print(f"ERROR in download_video: {str(e)}")
         return jsonify({"error": str(e)}), 500
         
     finally:
