@@ -29,9 +29,6 @@ def after_request(response):
 def handle_options():
     return '', 200
 
-# FRESH COOKIES FROM YOUR BROWSER
-YOUTUBE_COOKIE = "VISITOR_INFO1_LIVE=NMoVwLvQ2eA; VISITOR_PRIVACY_METADATA=CgJUThIEGgAgXw%3D%3D; YSC=D-jmyKVxpLQ; CONSENT=YES+cb; PREF=tz=Europe.London&f4=4000000; SOCS=CAESHAgCEhJnd3NfMjAyNTA0LTA3X3IwGgJlbiACGgYIgOD2sgY"
-
 def should_be_awake():
     now = datetime.now(pytz.UTC)
     current_hour = now.hour
@@ -76,10 +73,8 @@ def get_formats():
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-            'http_headers': {
-                'Cookie': YOUTUBE_COOKIE,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            }
+            # Use mweb client - NO PO TOKEN REQUIRED
+            'extractor_args': {'youtube': {'player_client': ['mweb']}},
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -145,10 +140,7 @@ def download_video():
                 'outtmpl': temp_path.replace('.audio', ''),
                 'quiet': True,
                 'no_warnings': True,
-                'http_headers': {
-                    'Cookie': YOUTUBE_COOKIE,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                }
+                'extractor_args': {'youtube': {'player_client': ['mweb']}},
             }
         else:
             height = quality.replace('p', '')
@@ -158,10 +150,7 @@ def download_video():
                 'quiet': True,
                 'no_warnings': True,
                 'merge_output_format': 'mp4',
-                'http_headers': {
-                    'Cookie': YOUTUBE_COOKIE,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                }
+                'extractor_args': {'youtube': {'player_client': ['mweb']}},
             }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
