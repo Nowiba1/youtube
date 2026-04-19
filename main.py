@@ -13,7 +13,7 @@ import re
 app = Flask(__name__)
 
 # CORS configuration - Will be set via environment variable
-ALLOWED_ORIGIN = os.environ.get('FRONTEND_URL', 'https://yourusername.github.io')
+ALLOWED_ORIGIN = os.environ.get('FRONTEND_URL', 'https://nowiba1.github.io')
 CORS(app, origins=[ALLOWED_ORIGIN])
 
 # Keep-alive configuration
