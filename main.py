@@ -29,6 +29,9 @@ def after_request(response):
 def handle_options():
     return '', 200
 
+# FRESH COOKIES FROM YOUR BROWSER
+YOUTUBE_COOKIE = "VISITOR_INFO1_LIVE=NMoVwLvQ2eA; VISITOR_PRIVACY_METADATA=CgJUThIEGgAgXw%3D%3D; YSC=D-jmyKVxpLQ; CONSENT=YES+cb"
+
 def should_be_awake():
     now = datetime.now(pytz.UTC)
     current_hour = now.hour
@@ -58,25 +61,6 @@ def index():
 def health():
     return jsonify({"status": "awake", "time": str(datetime.now())})
 
-def get_yt_dlp_opts():
-    """Return yt-dlp options that bypass bot detection"""
-    return {
-        'quiet': True,
-        'no_warnings': True,
-        'extract_flat': False,
-        # Use iOS client - weakest bot detection
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['ios'],
-                'skip': ['webpage']
-            }
-        },
-        # iOS user agent
-        'user_agent': 'com.google.ios.youtube/19.49.7 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X)',
-        # No cookies needed
-        'cookiefile': None,
-    }
-
 @app.route('/api/formats', methods=['POST'])
 def get_formats():
     try:
@@ -88,7 +72,15 @@ def get_formats():
         
         print(f"Fetching formats for: {url}")
         
-        ydl_opts = get_yt_dlp_opts()
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'http_headers': {
+                'Cookie': YOUTUBE_COOKIE,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            }
+        }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -142,20 +134,35 @@ def download_video():
         temp_path = temp_file.name
         temp_file.close()
         
-        ydl_opts = get_yt_dlp_opts()
-        ydl_opts['outtmpl'] = temp_path.replace('.audio', '') if download_type == 'audio' else temp_path
-        
         if download_type == 'audio':
-            ydl_opts['format'] = 'bestaudio/best'
-            ydl_opts['postprocessors'] = [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': quality.replace('kbps', ''),
-            }]
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': quality.replace('kbps', ''),
+                }],
+                'outtmpl': temp_path.replace('.audio', ''),
+                'quiet': True,
+                'no_warnings': True,
+                'http_headers': {
+                    'Cookie': YOUTUBE_COOKIE,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                }
+            }
         else:
             height = quality.replace('p', '')
-            ydl_opts['format'] = f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]'
-            ydl_opts['merge_output_format'] = 'mp4'
+            ydl_opts = {
+                'format': f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]',
+                'outtmpl': temp_path,
+                'quiet': True,
+                'no_warnings': True,
+                'merge_output_format': 'mp4',
+                'http_headers': {
+                    'Cookie': YOUTUBE_COOKIE,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                }
+            }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
