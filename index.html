@@ -5,13 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Downloader</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
@@ -24,28 +20,14 @@
             padding: 30px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 30px;
-            font-size: 2.5em;
-        }
-        .input-section {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 30px;
-        }
+        h1 { text-align: center; color: #333; margin-bottom: 30px; }
+        .input-section { display: flex; gap: 10px; margin-bottom: 30px; }
         #urlInput {
             flex: 1;
             padding: 15px;
             border: 2px solid #ddd;
             border-radius: 10px;
             font-size: 16px;
-            transition: border-color 0.3s;
-        }
-        #urlInput:focus {
-            outline: none;
-            border-color: #667eea;
         }
         .btn {
             padding: 15px 30px;
@@ -55,19 +37,10 @@
             border-radius: 10px;
             font-size: 16px;
             cursor: pointer;
-            transition: all 0.3s;
             font-weight: bold;
         }
-        .btn:hover {
-            background: #5a67d8;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-        .btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-        }
+        .btn:hover { background: #5a67d8; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
         #videoInfo {
             margin-bottom: 30px;
             padding: 20px;
@@ -80,20 +53,9 @@
             border-radius: 10px;
             margin-bottom: 15px;
         }
-        #title {
-            color: #2d3748;
-            font-size: 1.2em;
-        }
-        .format-selection {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #4a5568;
-            font-weight: 600;
-        }
-        select, .quality-group {
+        .format-selection { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: #4a5568; font-weight: 600; }
+        select {
             width: 100%;
             padding: 12px;
             border: 2px solid #ddd;
@@ -107,34 +69,22 @@
             border-radius: 8px;
             display: none;
         }
-        .status-info {
-            background: #bee3f8;
-            color: #2b6cb0;
-        }
-        .status-success {
-            background: #c6f6d5;
-            color: #22543d;
-        }
-        .status-error {
-            background: #fed7d7;
-            color: #9b2c2c;
-        }
-        .hidden {
-            display: none;
-        }
+        .status-info { background: #bee3f8; color: #2b6cb0; }
+        .status-success { background: #c6f6d5; color: #22543d; }
+        .status-error { background: #fed7d7; color: #9b2c2c; }
+        .hidden { display: none; }
         .progress-bar {
             width: 100%;
             height: 20px;
             background: #e2e8f0;
             border-radius: 10px;
-            overflow: hidden;
             margin-top: 10px;
         }
         .progress-fill {
             height: 100%;
             background: #667eea;
             width: 0%;
-            transition: width 0.3s;
+            border-radius: 10px;
         }
     </style>
 </head>
@@ -155,13 +105,13 @@
         <div id="downloadSection" class="hidden">
             <div class="format-selection">
                 <label>Download Type:</label>
-                <select id="downloadType" onchange="updateQualities()">
+                <select id="downloadType" onchange="updateQualityOptions()">
                     <option value="video">Video (MP4)</option>
-                    <option value="audio">Audio Only (MP3)</option>
+                    <option value="audio">Audio (MP3)</option>
                 </select>
             </div>
 
-            <div id="qualitySection" class="format-selection">
+            <div class="format-selection">
                 <label>Quality:</label>
                 <select id="qualitySelect"></select>
             </div>
@@ -178,22 +128,23 @@
     </div>
 
     <script>
-        const BACKEND_URL = 'https://youtube-4y2j.onrender.com';
+        // Free public yt-dlp API
+        const API_BASE = 'https://ytdl-api.vercel.app/api';
         
-        let currentFormats = null;
+        let currentFormats = [];
+        let videoInfo = null;
 
         function showStatus(message, type = 'info') {
             const statusDiv = document.getElementById('status');
             const messageDiv = document.getElementById('statusMessage');
-            const progressBar = document.getElementById('progressBar');
-            
             statusDiv.style.display = 'block';
             statusDiv.className = `status-${type}`;
             messageDiv.textContent = message;
-            
-            if (type !== 'info') {
-                progressBar.classList.add('hidden');
-            }
+        }
+
+        function extractVideoId(url) {
+            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+            return match ? match[1] : null;
         }
 
         async function fetchFormats() {
@@ -204,60 +155,70 @@
                 return;
             }
             
+            const videoId = extractVideoId(url);
+            if (!videoId) {
+                showStatus('Invalid YouTube URL', 'error');
+                return;
+            }
+            
             showStatus('Fetching video information...', 'info');
+            document.getElementById('fetchBtn').disabled = true;
             
             try {
-                const response = await fetch(`${BACKEND_URL}/api/formats`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
-                });
+                // Get video info
+                const infoResponse = await fetch(`${API_BASE}/info?id=${videoId}`);
+                const infoData = await infoResponse.json();
                 
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Failed to fetch video info');
+                if (infoData.error) {
+                    throw new Error(infoData.error);
                 }
                 
-                const data = await response.json();
-                currentFormats = data;
+                videoInfo = infoData;
+                
+                // Get available formats
+                const formatsResponse = await fetch(`${API_BASE}/formats?id=${videoId}`);
+                const formatsData = await formatsResponse.json();
+                
+                if (formatsData.error) {
+                    throw new Error(formatsData.error);
+                }
+                
+                currentFormats = formatsData.formats || [];
                 
                 document.getElementById('videoInfo').classList.remove('hidden');
-                document.getElementById('thumbnail').src = data.thumbnail;
-                document.getElementById('title').textContent = data.title;
+                document.getElementById('thumbnail').src = infoData.thumbnail || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+                document.getElementById('title').textContent = infoData.title || 'YouTube Video';
                 
-                updateQualities();
+                updateQualityOptions();
                 
                 document.getElementById('downloadSection').classList.remove('hidden');
                 showStatus('Ready to download!', 'success');
                 
             } catch (error) {
                 showStatus(error.message, 'error');
+            } finally {
+                document.getElementById('fetchBtn').disabled = false;
             }
         }
 
-        function updateQualities() {
+        function updateQualityOptions() {
             const type = document.getElementById('downloadType').value;
             const select = document.getElementById('qualitySelect');
             select.innerHTML = '';
             
-            if (!currentFormats) return;
-            
             if (type === 'video') {
-                const qualities = [...new Set(currentFormats.video_formats.map(f => f.quality))];
-                qualities.sort((a, b) => parseInt(b) - parseInt(a));
-                
-                qualities.forEach(quality => {
+                const qualities = ['2160p', '1440p', '1080p', '720p', '480p', '360p'];
+                qualities.forEach(q => {
                     const option = document.createElement('option');
-                    option.value = quality;
-                    option.textContent = quality;
+                    option.value = q;
+                    option.textContent = q;
                     select.appendChild(option);
                 });
             } else {
-                const qualities = ['128kbps', '192kbps', '256kbps', '320kbps'];
-                qualities.forEach(quality => {
+                ['320kbps', '256kbps', '192kbps', '128kbps'].forEach(q => {
                     const option = document.createElement('option');
-                    option.value = quality;
-                    option.textContent = `MP3 - ${quality}`;
+                    option.value = q;
+                    option.textContent = `MP3 - ${q}`;
                     select.appendChild(option);
                 });
             }
@@ -268,44 +229,44 @@
             const type = document.getElementById('downloadType').value;
             const quality = document.getElementById('qualitySelect').value;
             
-            showStatus('Starting download...', 'info');
+            const videoId = extractVideoId(url);
+            if (!videoId) {
+                showStatus('Invalid YouTube URL', 'error');
+                return;
+            }
+            
+            showStatus('Preparing download...', 'info');
+            document.getElementById('downloadBtn').disabled = true;
             document.getElementById('progressBar').classList.remove('hidden');
-            document.getElementById('progressFill').style.width = '10%';
+            document.getElementById('progressFill').style.width = '30%';
             
             try {
-                const response = await fetch(`${BACKEND_URL}/api/download`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url, type, quality })
-                });
+                const downloadUrl = `${API_BASE}/download?id=${videoId}&type=${type}&quality=${quality}`;
+                
+                document.getElementById('progressFill').style.width = '60%';
+                
+                // Fetch the file
+                const response = await fetch(downloadUrl);
                 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Download failed');
+                    throw new Error('Download failed');
                 }
                 
-                document.getElementById('progressFill').style.width = '50%';
-                
-                const contentDisposition = response.headers.get('Content-Disposition');
-                let filename = 'download.' + (type === 'video' ? 'mp4' : 'mp3');
-                if (contentDisposition) {
-                    const match = contentDisposition.match(/filename="(.+)"/);
-                    if (match) filename = match[1];
-                }
+                document.getElementById('progressFill').style.width = '90%';
                 
                 const blob = await response.blob();
-                document.getElementById('progressFill').style.width = '100%';
-                
-                const downloadUrl = window.URL.createObjectURL(blob);
+                const blobUrl = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = downloadUrl;
-                a.download = filename;
+                a.href = blobUrl;
+                a.download = `${videoInfo?.title || 'video'}.${type === 'audio' ? 'mp3' : 'mp4'}`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
-                window.URL.revokeObjectURL(downloadUrl);
+                window.URL.revokeObjectURL(blobUrl);
                 
+                document.getElementById('progressFill').style.width = '100%';
                 showStatus('Download complete!', 'success');
+                
                 setTimeout(() => {
                     document.getElementById('progressBar').classList.add('hidden');
                 }, 2000);
@@ -313,19 +274,10 @@
             } catch (error) {
                 showStatus(error.message, 'error');
                 document.getElementById('progressBar').classList.add('hidden');
+            } finally {
+                document.getElementById('downloadBtn').disabled = false;
             }
         }
-
-        window.addEventListener('load', async () => {
-            try {
-                const response = await fetch(`${BACKEND_URL}/health`);
-                if (response.ok) {
-                    console.log('Backend is ready');
-                }
-            } catch (error) {
-                console.log('Backend connection check');
-            }
-        });
     </script>
 </body>
 </html>
