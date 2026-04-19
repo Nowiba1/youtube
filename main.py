@@ -12,7 +12,7 @@ import re
 
 app = Flask(__name__)
 
-# CORS configuration - Fixed for nowiba1.github.io
+# CORS configuration
 ALLOWED_ORIGIN = os.environ.get('FRONTEND_URL', 'https://nowiba1.github.io')
 CORS(app, origins=[ALLOWED_ORIGIN], supports_credentials=False)
 
@@ -29,72 +29,34 @@ def after_request(response):
 def handle_options():
     return '', 200
 
-# YouTube cookies to bypass bot detection
-YOUTUBE_COOKIES = {
-    'CONSENT': 'YES+cb',
-    'SOCS': 'CAESHAgCEhJnd3NfMjAyNTA0LTA3X3IwGgJlbiACGgYIgOD2sgY',
-    'VISITOR_INFO1_LIVE': 'kXYQaTc7nDY',
-    'VISITOR_PRIVACY_METADATA': 'CgJFRRIEGgAgXw%3D%3D',
-    'PREF': 'tz=Europe.London&f4=4000000',
-}
-
-# Common HTTP headers to mimic a real browser
-HTTP_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Origin': 'https://www.youtube.com',
-    'Referer': 'https://www.youtube.com/',
-    'Cookie': '; '.join([f'{k}={v}' for k, v in YOUTUBE_COOKIES.items()])
-}
-
-# Keep-alive configuration
 def should_be_awake():
-    """Return False between 00:00-07:00 UTC"""
     now = datetime.now(pytz.UTC)
     current_hour = now.hour
     return not (0 <= current_hour < 7)
 
 def keep_alive():
-    """Background thread to prevent Render sleep"""
     app_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://youtube-4y2j.onrender.com')
-    
     while True:
         if should_be_awake():
             try:
-                response = requests.get(f"{app_url}/health", timeout=5)
-                print(f"✓ Keep-alive ping at {datetime.now()} - Status: {response.status_code}")
-            except Exception as e:
-                print(f"✗ Ping failed: {e}")
-            time.sleep(840)  # 14 minutes
+                requests.get(f"{app_url}/health", timeout=5)
+                print(f"✓ Keep-alive ping at {datetime.now()}")
+            except:
+                pass
+            time.sleep(840)
         else:
-            print(f"💤 Sleep hours (00:00-07:00 UTC) - {datetime.now()}")
-            time.sleep(3600)  # Check hourly during sleep
+            print(f"💤 Sleep hours (00:00-07:00 UTC)")
+            time.sleep(3600)
 
-# Start keep-alive thread
 threading.Thread(target=keep_alive, daemon=True).start()
 
 @app.route('/')
 def index():
-    return jsonify({
-        "message": "YouTube Downloader API is running!",
-        "endpoints": {
-            "/health": "Check server status",
-            "/api/formats": "POST - Get video formats",
-            "/api/download": "POST - Download video/audio"
-        },
-        "frontend": "https://nowiba1.github.io/youtube/",
-        "status": "active",
-        "sleep_hours": "00:00-07:00 UTC"
-    })
+    return jsonify({"status": "active", "frontend": "https://nowiba1.github.io/youtube/"})
 
 @app.route('/health')
 def health():
-    return jsonify({
-        "status": "awake",
-        "time": str(datetime.now()),
-        "sleep_hours": "00:00-07:00 UTC",
-        "cors_allowed": "https://nowiba1.github.io"
-    })
+    return jsonify({"status": "awake", "time": str(datetime.now())})
 
 @app.route('/api/formats', methods=['POST'])
 def get_formats():
@@ -105,13 +67,11 @@ def get_formats():
         if not url:
             return jsonify({"error": "URL is required"}), 400
         
-        print(f"Fetching formats for: {url}")
-        
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-            'http_headers': HTTP_HEADERS
+            'extractor_args': {'youtube': {'player_client': ['android']}},
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -127,15 +87,12 @@ def get_formats():
                         'filesize': f.get('filesize', 0)
                     })
             
-            # Remove duplicates by quality
             seen = set()
             unique_formats = []
             for fmt in formats:
                 if fmt['quality'] not in seen:
                     seen.add(fmt['quality'])
                     unique_formats.append(fmt)
-            
-            print(f"Found {len(unique_formats)} formats")
             
             return jsonify({
                 "title": info.get('title', 'Unknown'),
@@ -144,7 +101,7 @@ def get_formats():
             })
             
     except Exception as e:
-        print(f"ERROR in get_formats: {str(e)}")
+        print(f"ERROR: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/download', methods=['POST'])
@@ -161,9 +118,6 @@ def download_video():
         if not url:
             return jsonify({"error": "URL is required"}), 400
         
-        print(f"Downloading: {url} as {download_type} ({quality})")
-        
-        # Create temp file with unique name
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{download_type}')
         temp_path = temp_file.name
         temp_file.close()
@@ -179,7 +133,7 @@ def download_video():
                 'outtmpl': temp_path.replace('.audio', ''),
                 'quiet': True,
                 'no_warnings': True,
-                'http_headers': HTTP_HEADERS
+                'extractor_args': {'youtube': {'player_client': ['android']}},
             }
         else:
             height = quality.replace('p', '')
@@ -189,7 +143,7 @@ def download_video():
                 'quiet': True,
                 'no_warnings': True,
                 'merge_output_format': 'mp4',
-                'http_headers': HTTP_HEADERS
+                'extractor_args': {'youtube': {'player_client': ['android']}},
             }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -197,18 +151,13 @@ def download_video():
             filename = ydl.prepare_filename(info)
             
             if download_type == 'audio':
-                # Handle audio filename
                 if filename.endswith(('.webm', '.m4a')):
                     filename = filename.rsplit('.', 1)[0] + '.mp3'
                 elif not filename.endswith('.mp3'):
                     filename = filename + '.mp3'
             
-            # Clean filename for security
-            safe_title = re.sub(r'[^\w\-_\. ]', '', info.get('title', 'video'))
-            safe_title = safe_title[:100]  # Limit length
+            safe_title = re.sub(r'[^\w\-_\. ]', '', info.get('title', 'video'))[:100]
             download_name = f"{safe_title}.{download_type == 'video' and 'mp4' or 'mp3'}"
-            
-            print(f"Download complete: {download_name}")
             
             return send_file(
                 filename,
@@ -218,18 +167,15 @@ def download_video():
             )
             
     except Exception as e:
-        print(f"ERROR in download_video: {str(e)}")
+        print(f"ERROR: {str(e)}")
         return jsonify({"error": str(e)}), 500
         
     finally:
-        # Cleanup temp file after sending
         if temp_path and os.path.exists(temp_path):
             try:
                 os.unlink(temp_path)
-            except Exception as e:
-                print(f"Error cleaning up temp file: {e}")
-        
-        # Also try to cleanup the actual downloaded file
+            except:
+                pass
         try:
             if 'filename' in locals() and os.path.exists(filename):
                 os.unlink(filename)
