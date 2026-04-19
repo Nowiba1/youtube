@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Downloader</title>
+    <style>
+        /* ===== CSS START ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .input-section {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        #urlInput {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        #urlInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 15px 30px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+
+        .btn:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #videoInfo {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 10px;
+        }
+
+        #thumbnail {
+            width: 100%;
+            max-width: 320px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        #title {
+            color: #2d3748;
+            font-size: 1.2em;
+        }
+
+        .format-selection {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #4a5568;
+            font-weight: 600;
+        }
+
+        select, .quality-group {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .quality-group {
+            display: flex;
+            gap: 15px;
+            border: none;
+            padding: 0;
+        }
+
+        .quality-group label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-weight: normal;
+        }
+
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .status-info {
+            background: #bee3f8;
+            color: #2b6cb0;
+        }
+
+        .status-success {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status-error {
+            background: #fed7d7;
+            color: #9b2c2c;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #667eea;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        #wakeMessage {
+            text-align: center;
+            padding: 10px;
+            background: #fef5e7;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            color: #7d6608;
+        }
+        /* ===== CSS END ===== */
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 YouTube Downloader</h1>
+        
+        <div id="wakeMessage" class="hidden">
+            ⏰ Server is waking up from sleep mode... (max 30 seconds)
+        </div>
+
+        <div class="input-section">
+            <input type="text" id="urlInput" placeholder="Paste YouTube URL here..." />
+            <button class="btn" id="fetchBtn" onclick="fetchFormats()">Fetch</button>
+        </div>
+
+        <div id="videoInfo" class="hidden">
+            <img id="thumbnail" src="" alt="Video thumbnail">
+            <h2 id="title"></h2>
+        </div>
+
+        <div id="downloadSection" class="hidden">
+            <div class="format-selection">
+                <label>Download Type:</label>
+                <select id="downloadType" onchange="updateQualities()">
+                    <option value="video">Video (MP4)</option>
+                    <option value="audio">Audio Only (MP3)</option>
+                </select>
+            </div>
+
+            <div id="qualitySection" class="format-selection">
+                <label>Quality:</label>
+                <select id="qualitySelect"></select>
+            </div>
+
+            <button class="btn" id="downloadBtn" onclick="startDownload()">Download</button>
+        </div>
+
+        <div id="status">
+            <div id="statusMessage"></div>
+            <div class="progress-bar hidden" id="progressBar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== JAVASCRIPT START =====
+        // CONFIGURATION - Change this after deploying backend!
+        const BACKEND_URL = 'https://your-app-name.onrender.com';
+        
+        let currentFormats = null;
+        let wakeTimer = null;
+        let wakeSeconds = 0;
+
+        // Show status message
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            const messageDiv = document.getElementById('statusMessage');
+            const progressBar = document.getElementById('progressBar');
+            
+            statusDiv.style.display = 'block';
+            statusDiv.className = `status-${type}`;
+            messageDiv.textContent = message;
+            
+            if (type !== 'info') {
+                progressBar.classList.add('hidden');
+            }
+        }
+
+        // Handle server wake-up
+        async function fetchWithWakeUp(url, options = {}) {
+            const wakeMessage = document.getElementById('wakeMessage');
+            const fetchBtn = document.getElementById('fetchBtn');
+            
+            wakeMessage.classList.remove('hidden');
+            fetchBtn.disabled = true;
+            
+            wakeSeconds = 0;
+            if (wakeTimer) clearInterval(wakeTimer);
+            
+            wakeTimer = setInterval(() => {
+                wakeSeconds++;
+                wakeMessage.textContent = `⏰ Waking up server... ${wakeSeconds}s (max 30s)`;
+            }, 1000);
+            
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 45000);
+                
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                clearInterval(wakeTimer);
+                wakeMessage.classList.add('hidden');
+                fetchBtn.disabled = false;
+                
+                return response;
+            } catch (error) {
+                clearInterval(wakeTimer);
+                wakeMessage.classList.add('hidden');
+                fetchBtn.disabled = false;
+                
+                if (error.name === 'AbortError') {
+                    throw new Error('Server took too long to respond. Please try again.');
+                }
+                throw error;
+            }
+        }
+
+        // Fetch available formats
+        async function fetchFormats() {
+            const url = document.getElementById('urlInput').value.trim();
+            
+            if (!url) {
+                showStatus('Please enter a YouTube URL', 'error');
+                return;
+            }
+            
+            showStatus('Fetching video information...', 'info');
+            
+            try {
+                const response = await fetchWithWakeUp(`${BACKEND_URL}/api/formats`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to fetch video info');
+                }
+                
+                const data = await response.json();
+                currentFormats = data;
+                
+                // Show video info
+                document.getElementById('videoInfo').classList.remove('hidden');
+                document.getElementById('thumbnail').src = data.thumbnail;
+                document.getElementById('title').textContent = data.title;
+                
+                // Populate quality options
+                updateQualities();
+                
+                document.getElementById('downloadSection').classList.remove('hidden');
+                showStatus('Ready to download!', 'success');
+                
+            } catch (error) {
+                showStatus(error.message, 'error');
+            }
+        }
+
+        // Update quality dropdown based on download type
+        function updateQualities() {
+            const type = document.getElementById('downloadType').value;
+            const select = document.getElementById('qualitySelect');
+            select.innerHTML = '';
+            
+            if (!currentFormats) return;
+            
+            if (type === 'video') {
+                const qualities = [...new Set(currentFormats.video_formats.map(f => f.quality))];
+                qualities.sort((a, b) => {
+                    const aNum = parseInt(a);
+                    const bNum = parseInt(b);
+                    return bNum - aNum;
+                });
+                
+                qualities.forEach(quality => {
+                    const option = document.createElement('option');
+                    option.value = quality;
+                    option.textContent = quality;
+                    select.appendChild(option);
+                });
+            } else {
+                const qualities = ['128kbps', '192kbps', '256kbps', '320kbps'];
+                qualities.forEach(quality => {
+                    const option = document.createElement('option');
+                    option.value = quality;
+                    option.textContent = `MP3 - ${quality}`;
+                    select.appendChild(option);
+                });
+            }
+        }
+
+        // Start download
+        async function startDownload() {
+            const url = document.getElementById('urlInput').value.trim();
+            const type = document.getElementById('downloadType').value;
+            const quality = document.getElementById('qualitySelect').value;
+            
+            showStatus('Starting download...', 'info');
+            document.getElementById('progressBar').classList.remove('hidden');
+            document.getElementById('progressFill').style.width = '10%';
+            
+            try {
+                const response = await fetchWithWakeUp(`${BACKEND_URL}/api/download`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, type, quality })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Download failed');
+                }
+                
+                document.getElementById('progressFill').style.width = '50%';
+                
+                // Get filename from header or create default
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = 'download.' + (type === 'video' ? 'mp4' : 'mp3');
+                if (contentDisposition) {
+                    const match = contentDisposition.match(/filename="(.+)"/);
+                    if (match) filename = match[1];
+                }
+                
+                // Download file
+                const blob = await response.blob();
+                document.getElementById('progressFill').style.width = '100%';
+                
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(downloadUrl);
+                
+                showStatus('Download complete!', 'success');
+                setTimeout(() => {
+                    document.getElementById('progressBar').classList.add('hidden');
+                }, 2000);
+                
+            } catch (error) {
+                showStatus(error.message, 'error');
+                document.getElementById('progressBar').classList.add('hidden');
+            }
+        }
+
+        // Check if backend is awake on page load
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch(`${BACKEND_URL}/health`);
+                if (response.ok) {
+                    console.log('Backend is ready');
+                }
+            } catch (error) {
+                console.log('Backend might be sleeping');
+            }
+        });
+        // ===== JAVASCRIPT END =====
+    </script>
+</body>
+</html>
